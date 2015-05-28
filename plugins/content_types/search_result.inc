@@ -95,7 +95,19 @@ function ting_search_search_result_content_type_render($subtype, $conf, $panel_a
   else {
     if (empty($conf['override_empty'])) {
       $block->title = t('Your search yielded no results');
-      $block->content = search_help('search#noresults', drupal_help_arg());
+      $block->content .= '<ul><li>' . t(
+        'Try to search for !phrase on bibliotek.dk.',
+        array(
+          '!phrase' => l(
+            $keys,
+            'http://bibliotek.dk/search/work/' . $keys,
+            array(
+              'attributes' => array(
+              'target' => '_blank',
+            ),
+          )
+        )
+      )) . '</li></ul>' . search_help('search#noresults', drupal_help_arg());
     }
     else {
       $block->title = $conf['empty_title'];
