@@ -36,12 +36,12 @@ class TingSearchCqlDoctor {
    * @var array pattern.
    *   The pattern to replace in searchstring.
    */
-  private $pattern;
+  private $pattern = array();
   /**
    * @var array replace.
    *   The string to replace with.
    */
-  private $replace;
+  private $replace=array();
   /**
    * @var int replace_key.
    *   Used to prepend key - @see $this->get_replace_key().
@@ -57,8 +57,6 @@ class TingSearchCqlDoctor {
    */
   public function __construct($string) {
     $this->cql_string = trim($string);
-    // Handle reserved characters.
-    $this->escape_reserved_characters();
     // Remove multiple whitespaces.
     $this->cql_string = preg_replace('/\s+/', ' ', $this->cql_string);
   }
@@ -74,12 +72,15 @@ class TingSearchCqlDoctor {
    *   Cql compatible string.
    */
   public function string_to_cql() {
-    // Hendle parantheses.
-    $this->fix_paranthesis();
+
     // Handle qoutes.
     $this->fix_qoutes();
+    // Hendle parantheses.
+    $this->fix_paranthesis();
+    // Handle reserved characters.
+    $this->escape_reserved_characters();
     // Format the string.
-    return  $this->format_cql_string();
+    return $this->format_cql_string();
   }
 
   /**
@@ -101,12 +102,24 @@ class TingSearchCqlDoctor {
         break;
       }
     }
-
     // Explode string by whitespace.
     $expressions = explode(' ', $this->cql_string);
+
     // Replace keys with phrases,
     if (!empty($this->pattern)) {
       $expressions = preg_replace($this->pattern, $this->replace, $expressions);
+    }
+
+    $done = FALSE;
+    do {
+      $expressions = $this->replace_inline($expressions, $done);
+    }
+    while(!$done);
+
+    // Remove empty elements.
+    $empty_slots = array_keys($expressions,'');
+    foreach($empty_slots as $slot){
+      unset($expressions[$slot]);
     }
 
     if ($valid) {
@@ -118,6 +131,35 @@ class TingSearchCqlDoctor {
     return implode(' and ', $expressions);
   }
 
+
+  /**
+   * Some replacements are nested in paranthesis and/or qoutes
+   * eg. (hund and "("hest")") which is perfectly legal.
+   * Cql doctor first handles the qoutes and then the
+   * paranthesis ; thus (hund and "("hest")")  becomes encoded multiple times.
+   * This method runs through all parts to fix it
+   *
+   * @param array $expressions;
+   *  The parts of the searchquery to be cured.
+   * @param $done;
+   *  Flag indicating whether all parts has been handled.
+   * @return array;
+   *  Decoded expressions.
+   */
+  private function replace_inline($expressions, &$done) {
+    foreach ($expressions as $key_exp => $expression) {
+      foreach ($this->pattern as $key_pat => $regexp) {
+        if (preg_match($regexp, $expression)) {
+          $expressions[$key_exp] = preg_replace($regexp, $this->replace[$key_pat], $expression);
+          return $expressions;
+        }
+      }
+    }
+    $done = TRUE;
+    return $expressions;
+  }
+
+
   /**
    * Enqoute forward slashes and '-'.
    *
@@ -126,7 +168,6 @@ class TingSearchCqlDoctor {
    */
   private function escape_reserved_characters() {
     $this->cql_string = str_replace('/', ' "/" ', $this->cql_string);
-    $this->cql_string = str_replace('-', ' "-" ', $this->cql_string);
   }
 
   /**
@@ -157,6 +198,7 @@ class TingSearchCqlDoctor {
       // No matching paranthesis.
       return;
     }
+
     foreach ($phrases[1] as $key => $phrase) {
       if (!$this->string_is_cql($phrase)) {
         $this->set_replace_pattern($phrases[0][$key], TRUE);
@@ -174,7 +216,8 @@ class TingSearchCqlDoctor {
    */
   private function fix_qoutes() {
     // Greab qouted content.
-    preg_match_all('$["|\)]([^"]*)["\)]$', $this->cql_string, $phrases);
+    preg_match_all('$"([^"]*)"$', $this->cql_string, $phrases);
+;
     if (!empty($phrases[0])) {
       foreach ($phrases[0] as $phrase) {
         $this->set_replace_pattern($phrase);
@@ -204,6 +247,7 @@ class TingSearchCqlDoctor {
     }
     $replace_key = $this->get_replace_key();
     $this->pattern[] = '/' . $replace_key . '/';
+
     $this->cql_string = str_replace($phrase, $replace_key, $this->cql_string);
   }
 
@@ -220,7 +264,7 @@ class TingSearchCqlDoctor {
    */
   private function string_is_cql($string) {
     // Single word is valid (no whitespaces).
-    if (strpos($string, ' ') === FALSE) {
+    if (strpos(trim($string), ' ') === FALSE) {
       return TRUE;
     }
     return preg_match($this->get_cql_operators_regexp(), $string);
@@ -233,6 +277,6 @@ class TingSearchCqlDoctor {
    *   Reqular expression to identify cql operators.
    */
   private function get_cql_operators_regexp() {
-    return '@ and | or | not |=|\(|\)@';
+    return '@ and | any | all | adj | or | not |=|\(|\)@i';
   }
 }
